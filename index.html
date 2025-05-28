@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Universal Web‑Project Configurator v3</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<!-- ───── Design Tokens ───── -->
+<style>
+:root{
+  --bg:#0e0e11;--surface:#1d1d22;--surface-2:#2a2a31;--accent:#14b8a6;
+  --text:#e8e8f2;--muted:#9ca3af;--radius:12px;--shadow:0 4px 12px rgba(0,0,0,.35)
+}
+@media (prefers-color-scheme:light){
+  :root{--bg:#f3f4f6;--surface:#ffffff;--surface-2:#e8eaee;--text:#1f2937;--shadow:0 2px 8px rgba(0,0,0,.12)}
+}
+*{box-sizing:border-box;margin:0;font-family:Inter,system-ui,sans-serif}
+body{background:var(--bg);color:var(--text);display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{padding:1rem 1.5rem;background:var(--surface-2);display:flex;align-items:center;gap:1rem;box-shadow:var(--shadow)}
+header h1{font-size:1rem;font-weight:600;letter-spacing:.04em}
+header .stat{margin-left:auto;font-size:.85rem;color:var(--muted)}
+main{flex:1;display:grid;grid-template-columns:320px 1fr 320px;gap:1.25rem;padding:1.25rem;overflow:hidden}
+.panel{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#categories{overflow-y:auto;padding:1rem}
+#selected{overflow-y:auto;padding:1rem}
+#categories details{border:1px solid var(--surface-2);border-radius:8px;margin-bottom:.6rem;transition:border-color .25s}
+#categories details[open]{border-color:var(--accent)}
+details>summary{cursor:pointer;user-select:none;padding:.55rem .75rem;font-weight:600;outline:none}
+.opt{display:flex;align-items:center;gap:.6rem;padding:.35rem .9rem;border-radius:6px;transition:background .2s}
+.opt:hover{background:var(--surface-2)}
+.opt input{accent-color:var(--accent)}
+#search{width:100%;border:none;padding:.55rem .8rem;border-radius:8px;background:var(--surface-2);margin-bottom:.8rem;color:inherit}
+#search:focus{outline:2px solid var(--accent)}
+.tag{display:inline-flex;align-items:center;gap:.35rem;background:var(--accent);color:#fff;padding:.25rem .6rem;border-radius:45px;font-size:.72rem;margin:.2rem .25rem;white-space:nowrap}
+.tag button{all:unset;cursor:pointer;font-weight:700;line-height:1}
+section#outputPanel{display:flex;flex-direction:column;height:100%}
+#code{flex:1;resize:none;border:none;background:var(--surface-2);padding:1rem;font-family:JetBrainsMono,monospace;font-size:.8rem;border-radius:0 0 var(--radius) var(--radius);overflow:auto}
+.toolbar{display:flex;gap:.7rem;background:var(--surface-2);padding:.8rem;border-radius:var(--radius) var(--radius) 0 0;align-items:center}
+button{cursor:pointer;border:none;border-radius:6px;padding:.55rem 1rem;font-size:.8rem;font-weight:600;letter-spacing:.02em;background:var(--accent);color:#fff;transition:transform .15s}
+button:disabled{opacity:.35;cursor:not-allowed}
+button:hover:not(:disabled){transform:translateY(-1px)}
+.toast{position:fixed;bottom:1.2rem;right:1.2rem;background:var(--accent);color:#fff;padding:.6rem 1rem;border-radius:8px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .3s}
+.toast.show{opacity:1}
+.option-disabled{opacity:.45;pointer-events:none}
+@media(max-width:930px){main{grid-template-columns:1fr 1fr}}
+@media(max-width:680px){main{grid-template-columns:1fr;height:auto;overflow-y:auto}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ Universal Web‑Project Configurator</h1>
+  <div class="stat"><span id="selCount">0</span> selected</div>
+</header>
+
+<main>
+  <!-- Categories -->
+  <div class="panel">
+    <div id="categories" role="tree">
+      <input id="search" placeholder="🔍 Filter options" aria-label="Filter options">
+      <!-- injected categories -->
+    </div>
+  </div>
+
+  <!-- Output -->
+  <div class="panel" id="outputPanel">
+    <div class="toolbar">
+      <button id="genBtn" disabled aria-label="Generate specification (Ctrl+Enter)">Generate Spec</button>
+      <button id="copyBtn" disabled aria-label="Copy spec to clipboard (Ctrl+C)">Copy</button>
+      <button id="shareBtn" disabled aria-label="Share config via URL">Share‑URL</button>
+      <button id="clrBtn" aria-label="Clear selection">Clear</button>
+    </div>
+    <textarea id="code" placeholder="// Generated spec will appear here…" spellcheck="false" aria-label="Specification output"></textarea>
+  </div>
+
+  <!-- Selected items -->
+  <div class="panel">
+    <h3 style="padding:1rem .9rem .4rem;font-size:.9rem;font-weight:600">Selected</h3>
+    <div id="selected"></div>
+  </div>
+</main>
+
+<div id="toast" class="toast" role="status">✓ Copied to clipboard</div>
+
+<!-- ───── Logic ───── -->
+<script>
+/*──────────────── 0 | CONFIG DATA ────────────────*/
+const CATEGORIES=[
+  {n:'HTML Structure',i:['doctype‑html5','lang‑en','charset‑UTF‑8','meta‑viewport','header','nav','main','section','article','aside','footer','dialog','template']},
+  {n:'CSS Layout / Styling',i:['display‑flex','display‑grid','position‑sticky','media‑queries','scroll‑snap','animation','transform','variables‑custom‑props']},
+  {n:'JavaScript Core',i:['ES6+‑modules','async/await','fetch‑API','Service Worker/PWA','WebSocket','WebGL','WebAssembly']},
+  {n:'Frameworks / Libraries',i:['Vanilla JS','React','Vue','Svelte','Angular','Three.js','D3.js']},
+  {n:'UI Components',i:['Button','Modal','Navbar','Tabs','Carousel','Toast','Table']},
+  {n:'Build / Tooling',i:['Vite','Webpack','Rollup','ESLint','Prettier','Jest','CI/CD‑pipeline']},
+  {n:'CSS Frameworks',i:['None','Tailwind CSS','Bootstrap','Material UI','Sass','PostCSS']},
+  {n:'Accessibility / SEO',i:['ARIA‑landmarks','Keyboard‑nav','Meta‑description','OpenGraph','JSON‑LD schema']},
+  {n:'Other Config',i:['Dark‑mode‑support','Offline‑mode','Analytics‑hooks','Docker‑container','Serverless‑functions']}
+];
+
+/*──────────────── 1 | REGISTRY & HELPERS ─────────*/
+const REG=new Map();
+const q=id=>REG.get(id)||document.getElementById(id);
+const $=(sel,ctx=document)=>ctx.querySelector(sel);
+const $$=(sel,ctx=document)=>[...ctx.querySelectorAll(sel)];
+const STORAGE_KEY='uwpc-state';
+
+/*──────────────── 2 | STATE MANAGEMENT (immutable) ───────*/
+let state={sel:new Set()};
+const setState=producer=>{
+  const next=producer(structuredClone({sel:[...state.sel]})); // clone → object with array
+  const nextSel=new Set(next.sel);
+  if(JSON.stringify([...nextSel])!==JSON.stringify([...state.sel])){
+    state={sel:nextSel};
+    persistState();
+    render();
+  }
+};
+const persistState=()=>{
+  localStorage.setItem(STORAGE_KEY,JSON.stringify([...state.sel]));
+  history.replaceState(null,'',encodeHash());
+};
+const restoreState=()=>{
+  const fromHash=decodeHash();
+  const stored=localStorage.getItem(STORAGE_KEY);
+  const arr=fromHash??(stored?JSON.parse(stored):[]);
+  state.sel=new Set(arr);
+};
+
+/*──────────────── 3 | UI BUILD ────────────────*/
+const catBox=$("#categories");
+function buildUI(){
+  CATEGORIES.forEach(cat=>{
+    const details=document.createElement('details');
+    details.setAttribute('role','treeitem');
+    details.innerHTML=`<summary>${cat.n}</summary>`;
+    cat.i.forEach(item=>{
+      const id=item.replace(/[^\w-]/g,'_');
+      const label=document.createElement('label');
+      label.className='opt';
+      label.innerHTML=`<input type="checkbox" id="${id}" data-item="${item}" aria-label="${item}"> ${item}`;
+      details.append(label);
+      REG.set(id,label.querySelector('input'));
+    });
+    catBox.append(details);
+  });
+}
+
+/*──────────────── 4 | PURE COMPUTATION (deps) ─────*/
+function computeDependencyGraph(currentSel){
+  // placeholder for sophisticated dependency rules; returns Set of disabled ids
+  // (example rule) if 'None' CSS framework selected → disable others in that category
+  const disabled=new Set();
+  if(currentSel.has('None')){
+    CATEGORIES.find(c=>c.n==='CSS Frameworks').i
+      .filter(x=>x!=='None')
+      .forEach(x=>disabled.add(x.replace(/[^\w-]/g,'_')));
+  }
+  return disabled;
+}
+
+/*──────────────── 5 | RENDER CYCLE ───────────────*/
+function applyDependencyGraph(disabledSet){
+  $$('input[type=checkbox]').forEach(input=>{
+    const wrap=input.parentElement;
+    const isDis=disabledSet.has(input.id);
+    input.disabled=isDis;
+    wrap.classList.toggle('option-disabled',isDis);
+    if(isDis) input.checked=false;
+  });
+}
+function render(){
+  // sync checkboxes
+  $$('input[type=checkbox]').forEach(i=>{
+    i.checked=state.sel.has(i.dataset.item);
+  });
+  // selected tags
+  const selBox=$("#selected");selBox.innerHTML='';
+  state.sel.forEach(item=>{
+    const tag=document.createElement('span');
+    tag.className='tag';
+    tag.innerHTML=`${item}<button aria-label="Remove ${item}">×</button>`;
+    tag.querySelector('button').onclick=()=>toggleItem(item);
+    selBox.append(tag);
+  });
+  $("#selCount").textContent=state.sel.size;
+  const has=state.sel.size>0;
+  $("#genBtn").disabled=$("#copyBtn").disabled=$("#shareBtn").disabled=!has;
+
+  // dependencies
+  const disabledSet=computeDependencyGraph(state.sel);
+  applyDependencyGraph(disabledSet);
+}
+
+/*──────────────── 6 | EVENT HANDLERS ────────────*/
+function toggleItem(item){
+  setState(s=>{
+    s.sel=s.sel.includes?new Set(s.sel):new Set(s.sel); // clone safety
+    s.sel.has(item)?s.sel.delete(item):s.sel.add(item);
+    return s;
+  });
+}
+catBox.addEventListener('change',e=>{
+  if(e.target.matches('input[type=checkbox]')){
+    const item=e.target.dataset.item;
+    toggleItem(item);
+  }
+});
+const debouncedGenerateDeps=(()=>{let raf;return()=>{cancelAnimationFrame(raf);raf=requestAnimationFrame(render);};})();
+catBox.addEventListener('input',debouncedGenerateDeps); // capture rapid typing in future text fields
+
+$("#search").oninput=e=>{
+  const q=e.target.value.toLowerCase();
+  $$('.opt',catBox).forEach(opt=>{
+    opt.style.display=opt.textContent.toLowerCase().includes(q)?'flex':'none';
+  });
+};
+
+/*──────── Generate Spec, Copy, Share, Clear ─────*/
+$("#genBtn").onclick=()=>{
+  const spec={};
+  state.sel.forEach(it=>{
+    const cat=CATEGORIES.find(c=>c.i.includes(it))?.n||'Misc';
+    (spec[cat]??=[]).push(it);
+  });
+  $("#code").value=`# Web‑Project Spec\n\n\`\`\`json\n${JSON.stringify(spec,null,2)}\n\`\`\``;
+};
+$("#copyBtn").onclick=async()=>{
+  await navigator.clipboard.writeText($("#code").value);
+  const t=$("#toast");t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);
+};
+$("#clrBtn").onclick=()=>setState(s=>{s.sel=new Set();return s;});
+$("#shareBtn").onclick=()=>{
+  navigator.clipboard.writeText(location.href).then(()=>{
+    const t=$("#toast");t.textContent='✓ Share URL copied';t.classList.add('show');
+    setTimeout(()=>{t.classList.remove('show');t.textContent='✓ Copied to clipboard';},2000);
+  });
+};
+
+/*──────── URL HASH helpers ─────*/
+function encodeHash(){
+  return state.sel.size?`#${[...state.sel].map(encodeURIComponent).join(',')}`:'';
+}
+function decodeHash(){
+  if(location.hash.length>1){
+    return location.hash.slice(1).split(',').map(decodeURIComponent);
+  }
+  return null;
+}
+
+/*──────────────── 7 | INIT ──────────────────────*/
+document.addEventListener('DOMContentLoaded',()=>{
+  buildUI();
+  restoreState();
+  render();
+});
+
+/*──────── keyboard shortcuts (global) ─────*/
+window.addEventListener('keydown',e=>{
+  if(e.ctrlKey&&e.key==='Enter'&&!$("#genBtn").disabled) $("#genBtn").click();
+  if(e.ctrlKey&&e.key==='c'&&!$("#copyBtn").disabled) $("#copyBtn").click();
+});
+</script>
+</body>
+</html>
